@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_name }} - My Wardrobe</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/wardrobe.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h2>{{ app_name }}</h2>
+            <small>v{{ app_version }}</small>
+        </div>
+        <div class="nav-user">
+            Welcome, {{ username }}! |
+            <a href="/" class="logout-link">Logout</a>
+        </div>
+    </nav>
+    <main class="main-content">
+        <div class="wardrobe-header">
+            <h1>My Wardrobe</h1>
+            <div class="filter-controls">
+                <select id="category-filter">
+                    <option value="all">All Categories</option>
+                    {% for category_slug, category_name in category_names.items() %}
+                    <option value="{{ category_name }}">{{ category_name }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" id="search-filter" placeholder="Search items...">
+            </div>
+        </div>
+
+        <div class="wardrobe-grid" id="wardrobe-grid">
+            {% for item in wardrobe_items %}
+            <div class="wardrobe-item" data-category="{{ item.category }}" data-name="{{ item.name.lower() }}">
+                <div class="item-image">
+                    <img src="{{ item.image_url }}" alt="{{ item.name }}">
+                </div>
+                <div class="item-info">
+                    <h3>{{ item.name }}</h3>
+                    <span class="item-category">{{ item.category }}</span>
+                </div>
+                <div class="item-actions">
+                    <button class="btn-drag" onclick="startDrag({{ item.id }})">Drag</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </main>
+
+    <!-- Fixed Footer Buttons -->
+    <div class="fixed-footer">
+        <button class="btn-outfit-library" onclick="openOutfitLibrary()">
+            Outfit Library
+        </button>
+        <button class="btn-recommendations" onclick="openRecommendations()">
+            Personal Recommendations
+        </button>
+    </div>
+
+    <script>
+        // WebSocket connection for real-time features
+        const socket = new WebSocket(`ws://${window.location.host}/ws`);
+
+        socket.onopen = function(event) {
+            console.log('WebSocket connection established');
+        };
+
+        // Filter functionality
+        document.getElementById('category-filter').addEventListener('change', filterItems);
+        document.getElementById('search-filter').addEventListener('input', filterItems);
+
+        function filterItems() {
+            const categoryFilter = document.getElementById('category-filter').value;
+            const searchFilter = document.getElementById('search-filter').value.toLowerCase();
+            const items = document.querySelectorAll('.wardrobe-item');
+
+            items.forEach(item => {
+                const category = item.getAttribute('data-category');
+                const name = item.getAttribute('data-name');
+
+                const categoryMatch = categoryFilter === 'all' || category === categoryFilter;
+                const searchMatch = name.includes(searchFilter);
+
+                if (categoryMatch && searchMatch) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+
+        function startDrag(itemId) {
+            // Drag functionality for outfit builder
+            console.log('Starting drag for item:', itemId);
+            // This will be integrated with outfit builder
+        }
+
+        function openOutfitLibrary() {
+            // Open outfit library modal or page
+            alert('Outfit Library feature coming soon!');
+        }
+
+        function openRecommendations() {
+            // Open recommendations modal or page
+            alert('Personal Recommendations feature coming soon!');
+        }
+
+        // Initialize drag and drop
+        initializeDragAndDrop();
+
+        function initializeDragAndDrop() {
+            const items = document.querySelectorAll('.wardrobe-item');
+
+            items.forEach(item => {
+                item.setAttribute('draggable', 'true');
+
+                item.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', item.getAttribute('data-item-id'));
+                    item.classList.add('dragging');
+                });
+
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('dragging');
+                });
+            });
+        }
+
+        // Initialize filters on page load
+        filterItems();
+    </script>
+</body>
+</html>

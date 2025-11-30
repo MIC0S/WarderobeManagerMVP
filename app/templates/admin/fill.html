@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Fill - {{ app_name }}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h2>{{ app_name }} - Admin</h2>
+        </div>
+        <div class="nav-user">
+            <a href="/app" class="nav-link">Back to App</a> |
+            <a href="/" class="logout-link">Logout</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="admin-container">
+            <h1>Admin - Fill User Wardrobes</h1>
+
+            {% if error %}
+            <div class="error-message">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            {% if success %}
+            <div class="success-message">
+                {{ success }}
+            </div>
+            {% endif %}
+
+            <div class="fill-section">
+                <h2>Fill Specific User</h2>
+                <form method="post" action="/admin/fill/single" class="fill-form">
+                    <div class="form-group">
+                        <label for="user_id">Select User:</label>
+                        <select id="user_id" name="user_id" required>
+                            {% for user in users %}
+                            <option value="{{ user.id }}">{{ user.username }} (ID: {{ user.id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="item_count">Number of Random Clothes:</label>
+                        <input type="number" id="item_count" name="item_count"
+                               min="1" max="100" value="10" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Generate for This User</button>
+                </form>
+            </div>
+
+            <div class="fill-section">
+                <h2>Fill All Users</h2>
+                <form method="post" action="/admin/fill/all" class="fill-form">
+                    <div class="form-group">
+                        <label for="all_users_count">Number of Random Clothes Per User:</label>
+                        <input type="number" id="all_users_count" name="all_users_count"
+                               min="1" max="50" value="5" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-secondary">Generate for All Users</button>
+                </form>
+            </div>
+
+            <div class="fill-section">
+                <h2>Import Clothes from File</h2>
+                <div class="import-info">
+                    <p><strong>File:</strong> data/raw.txt</p>
+                    <p><strong>Format:</strong> JSON with clothing data</p>
+                    <p><strong>Note:</strong> Duplicates (by name) will be skipped automatically</p>
+                </div>
+
+                <form method="post" action="/admin/fill/import-clothes" class="fill-form">
+                    <button type="submit" class="btn btn-import" onclick="return confirm('This will import all clothing items from data/raw.txt. Continue?')">
+                        Import Clothes from File
+                    </button>
+                </form>
+            </div>
+
+            <div class="fill-section">
+                <h2>Clear Database</h2>
+                <div class="clear-actions">
+                    <form method="post" action="/admin/clear/clothes" class="clear-form" onsubmit="return confirm('This will delete ALL clothes and their associations. Continue?')">
+                        <button type="submit" class="btn btn-clear btn-clear-clothes">Clear All Clothes</button>
+                    </form>
+
+                    <form method="post" action="/admin/clear/ownings" class="clear-form" onsubmit="return confirm('This will delete ALL clothing ownerships. Continue?')">
+                        <button type="submit" class="btn btn-clear btn-clear-ownings">Clear All Ownings</button>
+                    </form>
+
+                    <form method="post" action="/admin/clear/outfits" class="clear-form" onsubmit="return confirm('This will delete ALL outfits. Continue?')">
+                        <button type="submit" class="btn btn-clear btn-clear-outfits">Clear All Outfits</button>
+                    </form>
+
+                    <form method="post" action="/admin/clear/users" class="clear-form" onsubmit="return confirm('This will delete ALL users except you. Continue?')">
+                        <button type="submit" class="btn btn-clear btn-clear-users">Clear All Users</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="fill-section">
+                <h2>Assign Categories</h2>
+                <div class="import-info">
+                    <p><strong>Logic:</strong> Extracts category from item_url and maps using config.CATEGORY_NAMES</p>
+                    <p><strong>Example:</strong> https://12storeez.com/catalog/<strong>obuv</strong>/womencollection/ → "Обувь"</p>
+                </div>
+
+                <form method="post" action="/admin/fill/assign-categories" class="fill-form">
+                    <button type="submit" class="btn btn-categories">
+                        Assign Categories to All Clothes
+                    </button>
+                </form>
+            </div>
+
+            <div class="users-list">
+                <h2>Current Users ({{ users|length }})</h2>
+                <div class="users-grid">
+                    {% for user in users %}
+                    <div class="user-card">
+                        <h3>{{ user.username }}</h3>
+                        <p>ID: {{ user.id }}</p>
+                        <p>Owned Clothes: {{ user.owned_clothes|length }}</p>
+                        <p>Outfits: {{ user.outfits|length }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>
