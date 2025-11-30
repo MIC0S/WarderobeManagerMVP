@@ -15,6 +15,7 @@ eggs/
 *.egg-info
 
 # Environments
+.env
 .env/
 venv/
 env/

@@ -13,6 +13,7 @@ class ClothingCreate(ClothingBase):
 
 class Clothing(ClothingBase):
     id: int
+    category: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -36,10 +37,19 @@ class OutfitBase(BaseModel):
 class OutfitCreate(OutfitBase):
     clothing_ids: List[int]
 
+class OutfitItem(BaseModel):
+    id: int
+    name: str
+    image_url: str
+    category: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
 class Outfit(OutfitBase):
     id: int
     user_id: int
-    clothes: List[Clothing] = []
+    clothes: List[OutfitItem] = []
 
     class Config:
         orm_mode = True

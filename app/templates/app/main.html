@@ -6,6 +6,12 @@
     <title>{{ app_name }} - My Wardrobe</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/wardrobe.css">
+
+    <!-- Load JavaScript modules -->
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/wardrobe-filter.js"></script>
+    <script src="/static/js/outfit-builder.js"></script>
+    <script src="/static/js/outfits-manager.js" data-username="{{ username }}"></script>
 </head>
 <body>
     <nav class="navbar">
@@ -18,118 +24,106 @@
             <a href="/" class="logout-link">Logout</a>
         </div>
     </nav>
-    <main class="main-content">
-        <div class="wardrobe-header">
-            <h1>My Wardrobe</h1>
-            <div class="filter-controls">
-                <select id="category-filter">
-                    <option value="all">All Categories</option>
-                    {% for category_slug, category_name in category_names.items() %}
-                    <option value="{{ category_name }}">{{ category_name }}</option>
-                    {% endfor %}
-                </select>
-                <input type="text" id="search-filter" placeholder="Search items...">
-            </div>
-        </div>
 
-        <div class="wardrobe-grid" id="wardrobe-grid">
-            {% for item in wardrobe_items %}
-            <div class="wardrobe-item" data-category="{{ item.category }}" data-name="{{ item.name.lower() }}">
-                <div class="item-image">
-                    <img src="{{ item.image_url }}" alt="{{ item.name }}">
-                </div>
-                <div class="item-info">
-                    <h3>{{ item.name }}</h3>
-                    <span class="item-category">{{ item.category }}</span>
-                </div>
-                <div class="item-actions">
-                    <button class="btn-drag" onclick="startDrag({{ item.id }})">Drag</button>
+    <!-- Main Wardrobe View -->
+    <div id="wardrobe-view" class="view active">
+        <main class="main-content">
+            <div class="wardrobe-header">
+                <h1>My Wardrobe</h1>
+                <div class="filter-controls">
+                    <select id="category-filter">
+                        <option value="all">All Categories</option>
+                        {% for category_slug, category_name in category_names.items() %}
+                        <option value="{{ category_name }}">{{ category_name }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" id="search-filter" placeholder="Search items...">
                 </div>
             </div>
-            {% endfor %}
-        </div>
-    </main>
+
+            <div class="wardrobe-grid" id="wardrobe-grid">
+                {% for item in wardrobe_items %}
+                <a href="{{ item.item_url }}" target="_blank" class="wardrobe-item-link">
+                    <div class="wardrobe-item" data-category="{{ item.category }}" data-name="{{ item.name.lower() }}">
+                        <div class="item-image">
+                            <img src="{{ item.image_url }}" alt="{{ item.name }}">
+                        </div>
+                        <div class="item-info">
+                            <h3>{{ item.name }}</h3>
+                            <span class="item-category">{{ item.category }}</span>
+                            {% if item.price %}
+                            <span class="item-price">{{ item.price }} ₽</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Outfit Library View -->
+    <div id="outfit-library-view" class="view">
+        <main class="main-content">
+            <div class="library-header">
+                <button class="btn-back-wardrobe" onclick="showWardrobe()">←</button>
+                <h1>Outfit Library</h1>
+                <button class="btn-create-outfit" onclick="showOutfitBuilder()">
+                    Create New Outfit
+                </button>
+            </div>
+
+            <div class="outfits-grid" id="outfits-grid">
+                <div class="empty-state" id="outfits-empty">
+                    <p>No outfits yet. Create your first one!</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Outfit Builder View -->
+    <div id="outfit-builder-view" class="view">
+        <main class="main-content">
+            <div class="builder-header">
+                <button class="btn-back" onclick="showOutfitLibrary()">← Back to Library</button>
+                <h1>Create New Outfit</h1>
+                <div class="builder-actions">
+                    <input type="text" id="outfit-name" placeholder="Enter outfit name..." class="outfit-name-input">
+                    <button class="btn-save-outfit" onclick="window.outfitBuilder.saveOutfit()">Save Outfit</button>
+                </div>
+            </div>
+            <div class="builder-container">
+                <div class="clothes-panel">
+                    <h3>Your Wardrobe</h3>
+                    <input type="text" id="wardrobe-search" placeholder="Search your wardrobe..." class="panel-search">
+                    <div class="clothes-list" id="available-clothes">
+                        {% for item in wardrobe_items %}
+                        <div class="builder-clothing-item" draggable="true" data-item-id="{{ item.id }}" data-item-name="{{ item.name.lower() }}">
+                            <img src="{{ item.image_url }}" alt="{{ item.name }}">
+                            <span>{{ item.name }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="outfit-panel">
+                    <h3>Selected Items</h3>
+                    <input type="text" id="outfit-search" placeholder="Search selected items..." class="panel-search">
+                    <div class="selected-items" id="selected-items">
+                        <div class="empty-state">Drag items here to build your outfit</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
 
     <!-- Fixed Footer Buttons -->
     <div class="fixed-footer">
-        <button class="btn-outfit-library" onclick="openOutfitLibrary()">
+        <button class="btn-outfit-library" onclick="showOutfitLibrary()">
             Outfit Library
         </button>
-        <button class="btn-recommendations" onclick="openRecommendations()">
+        <button class="btn-recommendations" onclick="showRecommendations()">
             Personal Recommendations
         </button>
     </div>
-
-    <script>
-        // WebSocket connection for real-time features
-        const socket = new WebSocket(`ws://${window.location.host}/ws`);
-
-        socket.onopen = function(event) {
-            console.log('WebSocket connection established');
-        };
-
-        // Filter functionality
-        document.getElementById('category-filter').addEventListener('change', filterItems);
-        document.getElementById('search-filter').addEventListener('input', filterItems);
-
-        function filterItems() {
-            const categoryFilter = document.getElementById('category-filter').value;
-            const searchFilter = document.getElementById('search-filter').value.toLowerCase();
-            const items = document.querySelectorAll('.wardrobe-item');
-
-            items.forEach(item => {
-                const category = item.getAttribute('data-category');
-                const name = item.getAttribute('data-name');
-
-                const categoryMatch = categoryFilter === 'all' || category === categoryFilter;
-                const searchMatch = name.includes(searchFilter);
-
-                if (categoryMatch && searchMatch) {
-                    item.style.display = 'block';
-                } else {
-                    item.style.display = 'none';
-                }
-            });
-        }
-
-        function startDrag(itemId) {
-            // Drag functionality for outfit builder
-            console.log('Starting drag for item:', itemId);
-            // This will be integrated with outfit builder
-        }
-
-        function openOutfitLibrary() {
-            // Open outfit library modal or page
-            alert('Outfit Library feature coming soon!');
-        }
-
-        function openRecommendations() {
-            // Open recommendations modal or page
-            alert('Personal Recommendations feature coming soon!');
-        }
-
-        // Initialize drag and drop
-        initializeDragAndDrop();
-
-        function initializeDragAndDrop() {
-            const items = document.querySelectorAll('.wardrobe-item');
-
-            items.forEach(item => {
-                item.setAttribute('draggable', 'true');
-
-                item.addEventListener('dragstart', (e) => {
-                    e.dataTransfer.setData('text/plain', item.getAttribute('data-item-id'));
-                    item.classList.add('dragging');
-                });
-
-                item.addEventListener('dragend', () => {
-                    item.classList.remove('dragging');
-                });
-            });
-        }
-
-        // Initialize filters on page load
-        filterItems();
-    </script>
 </body>
 </html>

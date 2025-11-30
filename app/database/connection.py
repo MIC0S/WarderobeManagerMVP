@@ -44,6 +44,15 @@ async def get_db() -> AsyncSession:
         finally:
             await session.close()
 
+async def get_db_websocket() -> AsyncSession:
+    """Database dependency for WebSocket context"""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+
 async def init_db():
     """
     Initialize database tables.

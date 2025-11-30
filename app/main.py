@@ -1,3 +1,4 @@
+import asyncio
 import json
 import random
 
@@ -15,12 +16,16 @@ import bcrypt
 from sqlalchemy.orm import selectinload
 from pathlib import Path
 
+from starlette.websockets import WebSocketDisconnect
+
 from app.crud.admin import get_users_with_stats, assign_random_clothes_to_user, assign_random_clothes_to_all_users
 
 # Import config and database
 from app.config import config
-from app.database.connection import get_db, init_db, close_db
+from app.crud.outfits import delete_outfit, update_outfit, get_user_outfits, create_outfit
+from app.database.connection import get_db, init_db, close_db, AsyncSessionLocal
 from app.database.models import User, Clothing, Outfit
+from app.schemas import OutfitCreate
 
 app = FastAPI(
     title=config.APP_NAME,
@@ -231,7 +236,8 @@ async def app_main(
             "category": clothing.category if clothing.category else "Не указано",
             "image_url": clothing.image_url,
             "color": clothing.color,
-            "price": clothing.price
+            "price": clothing.price,
+            "item_url": clothing.item_url
         })
 
     return templates.TemplateResponse(
@@ -246,12 +252,6 @@ async def app_main(
         }
     )
 
-@app.get("/admin/fill'", response_class=HTMLResponse)
-async def admin(request: Request, db: AsyncSession = Depends(get_db)):
-    username = await get_current_user(request, db)
-    if not username:
-        return RedirectResponse(url="/")
-
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -265,6 +265,278 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
 
+
+@app.websocket("/ws/outfits")
+async def websocket_outfits(websocket: WebSocket):
+    await websocket.accept()
+    print(f"WebSocket connected: {websocket.client}")
+
+    # Create a database session for the entire WebSocket connection
+    db = AsyncSessionLocal()
+
+    try:
+        while True:
+            # Add timeout to prevent hanging
+            data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+            print(f"Received WebSocket message: {data}")
+
+            if data["type"] == "create_outfit":
+                print("Handling create_outfit request")
+                await handle_create_outfit(websocket, db, data)
+
+            elif data["type"] == "get_outfits":
+                print("Handling get_outfits request")
+                await handle_get_outfits(websocket, db, data)
+
+            elif data["type"] == "update_outfit":
+                await handle_update_outfit(websocket, db, data)
+
+            elif data["type"] == "delete_outfit":
+                await handle_delete_outfit(websocket, db, data)
+            else:
+                # Check if connection is still open before sending
+                if websocket.client_state.CONNECTED:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Unknown message type: {data['type']}"
+                    })
+
+    except asyncio.TimeoutError:
+        print("WebSocket timeout - closing connection")
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {e}")
+        # Check if connection is still open before sending
+        if websocket.client_state.CONNECTED:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Invalid JSON format"
+            })
+    except WebSocketDisconnect:
+        print("WebSocket disconnected normally")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        # Only send error if connection is still open
+        if websocket.client_state.CONNECTED:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Internal server error"
+            })
+    finally:
+        # Close the database session when WebSocket closes
+        await db.close()
+        print(f"WebSocket connection closed: {websocket.client}")
+
+async def handle_create_outfit(websocket: WebSocket, db: AsyncSession, data: dict):
+    """Handle outfit creation via WebSocket"""
+    try:
+        username = data.get("username")
+        if not username:
+            if websocket.client_state.CONNECTED:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": "User not authenticated"
+                })
+            return
+
+        # Get user ID
+        stmt = select(User).where(User.username == username)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            await websocket.send_json({
+                "type": "error",
+                "message": "User not found"
+            })
+            return
+
+        # Validate input data
+        if "outfit" not in data or "name" not in data["outfit"] or "item_ids" not in data["outfit"]:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Invalid outfit data format"
+            })
+            return
+
+        # Create outfit
+        outfit_data = OutfitCreate(
+            name=data["outfit"]["name"],
+            clothing_ids=data["outfit"]["item_ids"]
+        )
+
+        outfit = await create_outfit(db, outfit_data, user.id)
+
+        # Convert to serializable format
+        outfit_dict = {
+            "id": outfit.id,
+            "name": outfit.name,
+            "items": [
+                {
+                    "id": clothing.id,
+                    "name": clothing.name,
+                    "image_url": clothing.image_url,
+                    "category": clothing.category
+                }
+                for clothing in outfit.clothes
+            ]
+        }
+        await websocket.send_json({
+            "type": "outfit_created",
+            "outfit": outfit_dict
+        })
+    except ValueError as e:
+        if websocket.client_state.CONNECTED:
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
+    except Exception as e:
+        print(f"Error in handle_create_outfit: {e}")
+        if websocket.client_state.CONNECTED:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Failed to create outfit: {str(e)}"
+            })
+
+
+async def handle_get_outfits(websocket: WebSocket, db: AsyncSession, data: dict):
+    """Handle fetching user's outfits via WebSocket"""
+    username = data.get("username")
+    if not username:
+        await websocket.send_json({
+            "type": "error",
+            "message": "User not authenticated"
+        })
+        return
+
+    # Get user ID
+    stmt = select(User).where(User.username == username)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        await websocket.send_json({
+            "type": "error",
+            "message": "User not found"
+        })
+        return
+
+    # Get user's outfits
+    outfits = await get_user_outfits(db, user.id)
+
+    outfit_list = []
+    for outfit in outfits:
+        outfit_list.append({
+            "id": outfit.id,
+            "name": outfit.name,
+            "items": [
+                {
+                    "id": clothing.id,
+                    "name": clothing.name,
+                    "image_url": clothing.image_url,
+                    "category": clothing.category
+                }
+                for clothing in outfit.clothes
+            ]
+        })
+
+    await websocket.send_json({
+        "type": "outfits_list",
+        "outfits": outfit_list
+    })
+
+
+async def handle_update_outfit(websocket: WebSocket, db: AsyncSession, data: dict):
+    """Handle outfit update via WebSocket"""
+    username = data.get("username")
+    if not username:
+        await websocket.send_json({
+            "type": "error",
+            "message": "User not authenticated"
+        })
+        return
+
+    # Get user ID
+    stmt = select(User).where(User.username == username)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        await websocket.send_json({
+            "type": "error",
+            "message": "User not found"
+        })
+        return
+
+    try:
+        outfit_data = OutfitCreate(
+            name=data["outfit"]["name"],
+            clothing_ids=data["outfit"]["item_ids"]
+        )
+
+        outfit = await update_outfit(db, data["outfit_id"], user.id, outfit_data)
+
+        # Convert to serializable format
+        outfit_dict = {
+            "id": outfit.id,
+            "name": outfit.name,
+            "items": [
+                {
+                    "id": clothing.id,
+                    "name": clothing.name,
+                    "image_url": clothing.image_url,
+                    "category": clothing.category
+                }
+                for clothing in outfit.clothes
+            ]
+        }
+
+        await websocket.send_json({
+            "type": "outfit_updated",
+            "outfit": outfit_dict
+        })
+
+    except ValueError as e:
+        await websocket.send_json({
+            "type": "error",
+            "message": str(e)
+        })
+
+
+async def handle_delete_outfit(websocket: WebSocket, db: AsyncSession, data: dict):
+    """Handle outfit deletion via WebSocket"""
+    username = data.get("username")
+    if not username:
+        await websocket.send_json({
+            "type": "error",
+            "message": "User not authenticated"
+        })
+        return
+
+    # Get user ID
+    stmt = select(User).where(User.username == username)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        await websocket.send_json({
+            "type": "error",
+            "message": "User not found"
+        })
+        return
+
+    success = await delete_outfit(db, data["outfit_id"], user.id)
+
+    if success:
+        await websocket.send_json({
+            "type": "outfit_deleted",
+            "outfit_id": data["outfit_id"]
+        })
+    else:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Outfit not found or access denied"
+        })
 
 async def verify_admin_user(request: Request, db: AsyncSession = Depends(get_db)):
     """Verify the user is authenticated AND is the admin (Micos)"""
