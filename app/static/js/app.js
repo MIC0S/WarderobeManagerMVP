@@ -6,23 +6,31 @@ function showView(viewName) {
     document.getElementById(viewName + '-view').classList.add('active');
 }
 
+// In app/static/js/app.js - update the showOutfitLibrary function
 function showOutfitLibrary() {
     showView('outfit-library');
-    // Ensure WebSocket is connected and outfits are loaded
+
     if (window.outfitsManager) {
         if (!window.outfitsManager.isConnected()) {
             window.outfitsManager.connect();
         }
-        window.outfitsManager.loadOutfits();
+        // Tell outfits manager that library is now visible
+        window.outfitsManager.showLibrary();
     }
 }
 
 function showWardrobe() {
     showView('wardrobe');
+    if (window.outfitsManager) {
+        window.outfitsManager.hideLibrary();
+    }
 }
 
 function showOutfitBuilder() {
     showView('outfit-builder');
+    if (window.outfitsManager) {
+        window.outfitsManager.hideLibrary();
+    }
     if (window.outfitBuilder) {
         window.outfitBuilder.reset();
         window.outfitBuilder.initializeDragAndDrop();

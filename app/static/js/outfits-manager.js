@@ -1,5 +1,9 @@
 window.outfitsManager = {
     socket: null,
+    outfitsGrid: null,
+    emptyState: null,
+    cachedOutfits: [], // Store outfits data
+    isLibraryVisible: false,
 
     connect() {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
@@ -10,12 +14,16 @@ window.outfitsManager = {
 
         this.socket.onopen = (event) => {
             console.log('Outfits WebSocket connected');
-            this.loadOutfits();
+            this.loadOutfits(); // Load outfits but don't display until view is visible
         };
 
         this.socket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            this.handleOutfitsMessage(data);
+            try {
+                const data = JSON.parse(event.data);
+                this.handleOutfitsMessage(data);
+            } catch (error) {
+                console.error('Error parsing WebSocket message:', error);
+            }
         };
 
         this.socket.onclose = (event) => {
@@ -28,26 +36,56 @@ window.outfitsManager = {
         };
     },
 
+    // Only try to get DOM elements when needed
+    ensureDomElements() {
+        if (!this.outfitsGrid || !this.emptyState) {
+            this.outfitsGrid = document.getElementById('outfits-grid');
+            this.emptyState = document.getElementById('outfits-empty');
+        }
+        return !!(this.outfitsGrid && this.emptyState);
+    },
+
     handleOutfitsMessage(data) {
         console.log('Received WebSocket message:', data);
 
         switch(data.type) {
             case 'outfit_created':
-                this.addOutfitToGrid(data.outfit);
-                // Reset the outfit builder when outfit is successfully created
+                // Add to cached outfits
+                this.cachedOutfits.push(data.outfit);
+
+                // Only try to display if library is currently visible
+                if (this.isLibraryVisible) {
+                    this.displayOutfits(this.cachedOutfits);
+                }
+
+                // Reset the outfit builder
                 if (window.outfitBuilder) {
                     window.outfitBuilder.onOutfitCreated();
                 }
                 break;
 
             case 'outfits_list':
-                this.displayOutfits(data.outfits);
+                // Store the outfits data
+                this.cachedOutfits = data.outfits;
+
+                // Only display if library is currently visible
+                if (this.isLibraryVisible) {
+                    this.displayOutfits(this.cachedOutfits);
+                }
+                break;
+
+            case 'outfit_deleted':
+                // Remove from cached outfits
+                this.cachedOutfits = this.cachedOutfits.filter(outfit => outfit.id !== data.outfit_id);
+
+                if (this.isLibraryVisible) {
+                    this.removeOutfitFromGrid(data.outfit_id);
+                }
                 break;
 
             case 'error':
                 console.error('WebSocket error:', data.message);
                 alert('Error: ' + data.message);
-                // Reset save button on error
                 if (window.outfitBuilder) {
                     window.outfitBuilder.setSaveButtonState('Save Outfit', false);
                 }
@@ -64,27 +102,45 @@ window.outfitsManager = {
         }
     },
 
-    displayOutfits(outfits) {
-        const outfitsGrid = document.getElementById('outfits-grid');
-        const emptyState = document.getElementById('outfits-empty');
+    // Call this when library view becomes visible
+    showLibrary() {
+        this.isLibraryVisible = true;
 
-        // Check if elements exist (might not be in current view)
-        if (!outfitsGrid || !emptyState) {
-            console.log('Outfit library elements not found in current view');
+        // Small delay to ensure DOM is ready
+        setTimeout(() => {
+            if (this.ensureDomElements()) {
+                this.displayOutfits(this.cachedOutfits);
+            } else {
+                console.log('Library DOM elements still not available, loading outfits...');
+                this.loadOutfits();
+            }
+        }, 100);
+    },
+
+    // Call this when leaving library view
+    hideLibrary() {
+        this.isLibraryVisible = false;
+    },
+
+    displayOutfits(outfits) {
+        if (!this.ensureDomElements()) {
+            console.log('Cannot display outfits - DOM elements not available');
             return;
         }
+
+        console.log('Displaying outfits:', outfits.length);
 
         if (outfits.length === 0) {
-            emptyState.style.display = 'block';
-            outfitsGrid.innerHTML = '';
+            this.emptyState.style.display = 'block';
+            this.outfitsGrid.innerHTML = '';
             return;
         }
 
-        emptyState.style.display = 'none';
-        outfitsGrid.innerHTML = '';
+        this.emptyState.style.display = 'none';
+        this.outfitsGrid.innerHTML = '';
 
         outfits.forEach(outfit => {
-            outfitsGrid.appendChild(this.createOutfitCard(outfit));
+            this.outfitsGrid.appendChild(this.createOutfitCard(outfit));
         });
     },
 
@@ -108,24 +164,18 @@ window.outfitsManager = {
         return card;
     },
 
-    addOutfitToGrid(outfit) {
-        const outfitsGrid = document.getElementById('outfits-grid');
-        const emptyState = document.getElementById('outfits-empty');
+    removeOutfitFromGrid(outfitId) {
+        if (this.ensureDomElements()) {
+            const outfitCard = this.outfitsGrid.querySelector(`[data-outfit-id="${outfitId}"]`);
+            if (outfitCard) {
+                outfitCard.remove();
+            }
 
-        // Check if elements exist (might not be in current view)
-        if (!outfitsGrid || !emptyState) {
-            console.log('Cannot add outfit - outfit library not visible');
-            return;
-        }
-
-        emptyState.style.display = 'none';
-
-        // Check if outfit already exists (for updates)
-        const existingCard = outfitsGrid.querySelector(`[data-outfit-id="${outfit.id}"]`);
-        if (existingCard) {
-            existingCard.replaceWith(this.createOutfitCard(outfit));
-        } else {
-            outfitsGrid.appendChild(this.createOutfitCard(outfit));
+            // Show empty state if no outfits left
+            const remainingOutfits = this.outfitsGrid.querySelectorAll('.outfit-card');
+            if (remainingOutfits.length === 0) {
+                this.emptyState.style.display = 'block';
+            }
         }
     },
 

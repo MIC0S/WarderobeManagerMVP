@@ -1,6 +1,7 @@
 window.outfitBuilder = {
     initialize() {
         this.initializeSearch();
+        this.initializeDragAndDrop(); // ADD THIS LINE - was missing!
     },
 
     initializeSearch() {
@@ -46,6 +47,11 @@ window.outfitBuilder = {
         const availableContainer = document.getElementById('available-clothes');
         const selectedContainer = document.getElementById('selected-items');
 
+        if (!availableContainer || !selectedContainer) {
+            console.log('Drag and drop containers not found');
+            return;
+        }
+
         // Make both containers droppable
         [availableContainer, selectedContainer].forEach(container => {
             container.addEventListener('dragover', (e) => {
@@ -73,6 +79,7 @@ window.outfitBuilder = {
 
                     // Update empty states
                     this.updateEmptyStates();
+                    this.filterBuilderItems(); // ADD THIS - update search filters
                 }
             });
         });
@@ -89,11 +96,15 @@ window.outfitBuilder = {
                 item.classList.remove('dragging');
             });
         });
+
+        this.updateEmptyStates(); // INITIALIZE EMPTY STATES
     },
 
     updateEmptyStates() {
         const selectedContainer = document.getElementById('selected-items');
         const availableContainer = document.getElementById('available-clothes');
+
+        if (!selectedContainer || !availableContainer) return;
 
         // Update selected items empty state
         const selectedItems = selectedContainer.querySelectorAll('.builder-clothing-item');
@@ -107,10 +118,12 @@ window.outfitBuilder = {
 
         // Update available clothes empty state
         const availableItems = availableContainer.querySelectorAll('.builder-clothing-item');
-        if (availableItems.length === 0) {
-            if (!availableContainer.querySelector('.empty-state')) {
-                availableContainer.innerHTML = '<div class="empty-state">All items are in your outfit</div>';
-            }
+        let availableEmptyState = availableContainer.querySelector('.empty-state');
+
+        if (availableItems.length === 0 && !availableEmptyState) {
+            availableContainer.innerHTML = '<div class="empty-state">All items are in your outfit</div>';
+        } else if (availableItems.length > 0 && availableEmptyState) {
+            availableEmptyState.remove();
         }
     },
 
@@ -165,6 +178,7 @@ window.outfitBuilder = {
             this.setSaveButtonState('Saving...', true);
 
             const success = window.outfitsManager.createOutfit(outfitName, itemIds);
+
             if (!success) {
                 alert('Failed to send outfit creation request. Please check connection.');
                 this.setSaveButtonState('Save Outfit', false);
